@@ -115,7 +115,14 @@ def browser_context(request):
     # net::ERR_HTTP2_PROTOCOL_ERROR on redBus unless Chromium uses HTTP/1.1.
     launch_options = {"headless": headless}
     if b_name_lower == "chromium" or b_name_lower == "chrome":
-        launch_options["args"] = ["--disable-http2", "--disable-ipv6"]
+        # GitHub runners get an HTTP/2 error, then a hung load event, on redBus.
+        launch_options["args"] = [
+            "--disable-http2",
+            "--disable-quic",
+            "--disable-ipv6",
+            "--disable-blink-features=AutomationControlled",
+        ]
+        launch_options["ignore_default_args"] = ["--enable-automation"]
         if headless:
             launch_options["args"].extend(["--no-sandbox", "--disable-dev-shm-usage"])
         browser = playwright.chromium.launch(**launch_options)
@@ -127,7 +134,17 @@ def browser_context(request):
         raise ValueError(f"Unknown browser type: {browser_name}")
 
     # Create a browser context (optionally with video recording)
-    context_options = {"viewport": {"width": 1440, "height": 900}}
+    context_options = {
+        "viewport": {"width": 1440, "height": 900},
+        "locale": "en-IN",
+        "timezone_id": "Asia/Kolkata",
+        "service_workers": "block",
+        "user_agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+        ),
+        "extra_http_headers": {"Accept-Language": "en-IN,en;q=0.9"},
+    }
     if video_option in ["on", "retain-on-failure"]:
         Path("reports/videos").mkdir(parents=True, exist_ok=True)
         context_options["record_video_dir"] = "reports/videos"
@@ -141,6 +158,28 @@ def browser_context(request):
     context.close()
     browser.close()
     playwright.stop()
+
+_BLOCKED_HOSTS = (
+    "googletagmanager.com",
+    "google-analytics.com",
+    "doubleclick.net",
+    "googleadservices.com",
+    "facebook.net",
+    "hotjar.com",
+    "newrelic.com",
+    "nr-data.net",
+    "scorecardresearch.com",
+    "clarity.ms",
+    "adservice.google.com",
+)
+
+
+def _allow_page_request(route):
+    if any(host in route.request.url for host in _BLOCKED_HOSTS):
+        route.abort()
+    else:
+        route.continue_()
+
 
 # STEP 5: FIXTURE 2 - PAGE CREATION AND TEST ARTIFACTS MANAGEMENT
 @pytest.fixture(scope="function")
@@ -164,12 +203,15 @@ def page(request, browser_context):
         logging.info("Tracing enabled - capturing screenshots and actions")
         browser_context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
-    # Creates and navigate to base URL. The HTTP/2 failure is intermittent on Actions.
+    # Tracker calls from a GitHub runner never finish, so the load event never fires.
+    # Stop at the first response and continue once the search box is visible.
     page = browser_context.new_page()
+    page.route("**/*", _allow_page_request)
     last_error = None
     for attempt in range(1, 4):
         try:
-            page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+            page.goto(base_url, wait_until="commit", timeout=45000)
+            page.locator("#srcinput").wait_for(state="visible", timeout=20000)
             last_error = None
             break
         except Exception as exc:
