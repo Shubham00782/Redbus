@@ -4,6 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import logging
 import argparse
+import time
 from utils.config_reader import ConfigReader
 from datetime import datetime
 
@@ -99,22 +100,24 @@ def browser_context(request):
     headed_flag = get_config_value(request.config, "headed")
     video_option = get_config_value(request.config, "video")
 
-    logging.info(f"Starting browser context {browser_name}")
-    logging.info(f"Headless mode: {headed_flag}")
-
-    # Start Playwright
-    playwright = sync_playwright().start()
-
-    # Launch the specified browser
     if isinstance(browser_name, list):
         browser_name = browser_name[0]
 
     b_name_lower = browser_name.lower()
     headless = not _headed_enabled(headed_flag)
+    logging.info(f"Starting browser context {browser_name}")
+    logging.info(f"Headless: {headless}")
+
+    # Start Playwright
+    playwright = sync_playwright().start()
+
+    # Launch the specified browser. GitHub-hosted runners hit
+    # net::ERR_HTTP2_PROTOCOL_ERROR on redBus unless Chromium uses HTTP/1.1.
     launch_options = {"headless": headless}
-    if headless:
-        launch_options["args"] = ["--no-sandbox", "--disable-dev-shm-usage"]
     if b_name_lower == "chromium" or b_name_lower == "chrome":
+        launch_options["args"] = ["--disable-http2"]
+        if headless:
+            launch_options["args"].extend(["--no-sandbox", "--disable-dev-shm-usage"])
         browser = playwright.chromium.launch(**launch_options)
     elif b_name_lower == "firefox":
         browser = playwright.firefox.launch(**launch_options)
@@ -161,9 +164,21 @@ def page(request, browser_context):
         logging.info("Tracing enabled - capturing screenshots and actions")
         browser_context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
-    # Creates and navigate to base URL
+    # Creates and navigate to base URL. The HTTP/2 failure is intermittent on Actions.
     page = browser_context.new_page()
-    page.goto(base_url, wait_until="domcontentloaded")
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            logging.warning("Opening %s failed on attempt %s/3: %s", base_url, attempt, exc)
+            if attempt < 3:
+                time.sleep(2)
+    if last_error is not None:
+        raise last_error
 
     # Yield the page to the test
     yield page
