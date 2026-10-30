@@ -14,6 +14,10 @@ jobs:
     name: Scrape redBus and append the sheet
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    defaults:
+      run:
+        # The Redbus repository contains this project in a subfolder.
+        working-directory: Redbus Occupancy
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -23,15 +27,18 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: Redbus Occupancy/requirements.txt
 
       - name: Install Python dependencies
+        working-directory: Redbus Occupancy
         run: pip install -r requirements.txt
 
       - name: Install Chromium
+        working-directory: Redbus Occupancy
         run: playwright install --with-deps chromium
 
       - name: Write the Google service account key
+        working-directory: Redbus Occupancy
         env:
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: |
@@ -39,9 +46,11 @@ jobs:
             echo "Add the GOOGLE_SERVICE_ACCOUNT_JSON secret before running this workflow."
             exit 1
           fi
+          mkdir -p config
           python -c 'import os, pathlib; pathlib.Path("config/redbus-occupancy-586ee3125351.json").write_text(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])'
 
       - name: Collect occupancy
+        working-directory: Redbus Occupancy
         run: >
           pytest testcases/test_route_occupancy.py
           -o addopts="-v --browser=chromium --screenshot=only-on-failure --tracing=retain-on-failure --alluredir=reports/allure-results"
@@ -53,6 +62,6 @@ jobs:
           name: occupancy-run
           if-no-files-found: ignore
           path: |
-            reports/screenshots
-            reports/traces
-            reports/allure-results
+            Redbus Occupancy/reports/screenshots
+            Redbus Occupancy/reports/traces
+            Redbus Occupancy/reports/allure-results
