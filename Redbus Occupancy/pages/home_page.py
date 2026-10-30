@@ -48,7 +48,7 @@ class HomePage(BasePage):
                 ].forEach((key) => localStorage.removeItem(key));
             }"""
         )
-        self.page.reload(wait_until="domcontentloaded")
+        self.page.reload(wait_until="commit")
 
     def _select_city(self, input_locator: str, city: str):
         logger.info("Selecting city '%s'", city)
