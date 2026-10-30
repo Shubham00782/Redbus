@@ -1,0 +1,58 @@
+name: Daily occupancy report
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 11:45 UTC is 17:15 IST.
+    - cron: "45 11 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    name: Scrape redBus and append the sheet
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      - name: Write the Google service account key
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "Add the GOOGLE_SERVICE_ACCOUNT_JSON secret before running this workflow."
+            exit 1
+          fi
+          python -c 'import os, pathlib; pathlib.Path("config/redbus-occupancy-586ee3125351.json").write_text(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])'
+
+      - name: Collect occupancy
+        run: >
+          pytest testcases/test_route_occupancy.py
+          -o addopts="-v --browser=chromium --screenshot=only-on-failure --tracing=retain-on-failure --alluredir=reports/allure-results"
+
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: occupancy-run
+          if-no-files-found: ignore
+          path: |
+            reports/screenshots
+            reports/traces
+            reports/allure-results
