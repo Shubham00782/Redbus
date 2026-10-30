@@ -60,8 +60,8 @@ jobs:
       - name: Collect occupancy
         working-directory: Redbus Occupancy
         run: >
-          pytest testcases/test_route_occupancy.py
-          -o addopts="-v --browser=chromium --screenshot=only-on-failure --tracing=retain-on-failure --alluredir=reports/allure-results"
+          xvfb-run -a pytest testcases/test_route_occupancy.py
+          -o addopts="-v --browser=chromium --headed --screenshot=only-on-failure --tracing=retain-on-failure --alluredir=reports/allure-results"
 
       - name: Upload failure evidence
         if: always()
