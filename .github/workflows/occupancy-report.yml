@@ -22,6 +22,11 @@ jobs:
       - name: Check out the repository
         uses: actions/checkout@v4
 
+      - name: Use IPv4
+        run: |
+          sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
+          sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -48,6 +53,9 @@ jobs:
           fi
           mkdir -p config
           python -c 'import os, pathlib; pathlib.Path("config/redbus-occupancy-586ee3125351.json").write_text(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])'
+
+      - name: Check that redBus answers
+        run: curl -4 -I --max-time 40 -sS -o /dev/null -w "http=%{http_code} time=%{time_total}\n" https://www.redbus.in/
 
       - name: Collect occupancy
         working-directory: Redbus Occupancy
