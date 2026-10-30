@@ -115,7 +115,7 @@ def browser_context(request):
     # net::ERR_HTTP2_PROTOCOL_ERROR on redBus unless Chromium uses HTTP/1.1.
     launch_options = {"headless": headless}
     if b_name_lower == "chromium" or b_name_lower == "chrome":
-        launch_options["args"] = ["--disable-http2"]
+        launch_options["args"] = ["--disable-http2", "--disable-ipv6"]
         if headless:
             launch_options["args"].extend(["--no-sandbox", "--disable-dev-shm-usage"])
         browser = playwright.chromium.launch(**launch_options)
