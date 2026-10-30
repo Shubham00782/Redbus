@@ -154,7 +154,7 @@ class TestRouteOccupancy:
 
     def _search(self, page, base_url, from_city, to_city):
         logger.info("Opening %s", base_url)
-        page.goto(base_url, wait_until="domcontentloaded")
+        page.goto(base_url, wait_until="commit", timeout=45000)
         HomePage(page, base_url).search_route(from_city, to_city)
         results = SearchResultsPage(page, base_url)
         return results, results.get_bus_count()
