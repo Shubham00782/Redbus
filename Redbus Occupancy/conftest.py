@@ -4,6 +4,7 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 import logging
 import argparse
+import os
 import time
 from utils.config_reader import ConfigReader
 from datetime import datetime
@@ -123,8 +124,12 @@ def browser_context(request):
             "--disable-blink-features=AutomationControlled",
         ]
         launch_options["ignore_default_args"] = ["--enable-automation"]
-        if headless:
-            launch_options["args"].extend(["--no-sandbox", "--disable-dev-shm-usage"])
+        if headless or os.environ.get("CI"):
+            launch_options["args"].extend([
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ])
         browser = playwright.chromium.launch(**launch_options)
     elif b_name_lower == "firefox":
         browser = playwright.firefox.launch(**launch_options)
@@ -159,28 +164,6 @@ def browser_context(request):
     browser.close()
     playwright.stop()
 
-_BLOCKED_HOSTS = (
-    "googletagmanager.com",
-    "google-analytics.com",
-    "doubleclick.net",
-    "googleadservices.com",
-    "facebook.net",
-    "hotjar.com",
-    "newrelic.com",
-    "nr-data.net",
-    "scorecardresearch.com",
-    "clarity.ms",
-    "adservice.google.com",
-)
-
-
-def _allow_page_request(route):
-    if any(host in route.request.url for host in _BLOCKED_HOSTS):
-        route.abort()
-    else:
-        route.continue_()
-
-
 # STEP 5: FIXTURE 2 - PAGE CREATION AND TEST ARTIFACTS MANAGEMENT
 @pytest.fixture(scope="function")
 def page(request, browser_context):
@@ -203,10 +186,9 @@ def page(request, browser_context):
         logging.info("Tracing enabled - capturing screenshots and actions")
         browser_context.tracing.start(screenshots=True, snapshots=True, sources=True)
 
-    # Tracker calls from a GitHub runner never finish, so the load event never fires.
-    # Stop at the first response and continue once the search box is visible.
+    # redBus does not answer headless Chromium on GitHub. Actions runs this
+    # same browser in a virtual display with --headed.
     page = browser_context.new_page()
-    page.route("**/*", _allow_page_request)
     last_error = None
     for attempt in range(1, 4):
         try:
